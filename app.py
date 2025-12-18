@@ -2,26 +2,27 @@ import streamlit as st
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
+from PIL import Image # <--- NUEVO: Herramienta para imágenes
 
 # 1. Configuración de la Página
 st.set_page_config(
-    page_title="Profe Bot IA",
-    page_icon="🎓",
+    page_title="Profe Bot IA (Con Ojos)",
+    page_icon="👁️‍🗨️",
     layout="centered"
 )
 
-# 2. Cargar la llave de seguridad
+# 2. Cargar llave de seguridad
 load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY")
 
 if not api_key:
-    st.error("❌ No se encontró la API Key. Revisa tu archivo .env")
+    st.error("❌ Falta la API Key en el .env")
     st.stop()
 
 genai.configure(api_key=api_key)
 
-# 3. Configuración del Modelo y Personalidad
-MODELO_A_USAR = "gemini-2.5-flash" # O usa "gemini-pro" si prefieres
+# 3. Configuración del Modelo
+MODELO_A_USAR = "gemini-2.5-flash"
 
 INSTRUCCIONES = """
 Eres un profesor experto de Bachillerato, especializado en Tecnología.
@@ -36,47 +37,68 @@ Tus reglas de comportamiento son:
 7. Usa emojis para hacer la clase divertida 💻.
 """
 
-# 4. Inicializar el Chat y la Memoria
-# Si no existe historial, creamos una lista vacía
+# 4. Inicializar Chat
 if "history" not in st.session_state:
     st.session_state.history = []
 
 try:
-    # Cargamos el modelo con el historial que tengamos guardado
     model = genai.GenerativeModel(MODELO_A_USAR, system_instruction=INSTRUCCIONES)
     chat = model.start_chat(history=st.session_state.history)
 except Exception as e:
-    st.error(f"Error al conectar: {e}")
+    st.error(f"Error de conexión: {e}")
 
-# 5. Título y Diseño
-st.title("🎓 Profe Bot IA ")
-st.caption("Tu tutor personal de Inteligencia Artificial")
+# 5. Interfaz Gráfica
+st.title("👁️‍🗨️ Profe Bot: Ahora puedo ver")
+st.caption("Sube una foto de tu tarea o duda")
+
+# --- NUEVO: BARRA LATERAL PARA SUBIR IMÁGENES ---
+with st.sidebar:
+    st.header("📸 Sube tu imagen aquí")
+    archivo_subido = st.file_uploader("Elige una foto...", type=["jpg", "jpeg", "png"])
+    
+    imagen_para_procesar = None
+    if archivo_subido is not None:
+        # Mostramos la imagen en pequeñito
+        imagen_para_procesar = Image.open(archivo_subido)
+        st.image(imagen_para_procesar, caption="Imagen cargada", use_container_width=True)
+        st.success("¡Imagen lista para analizar!")
+
 st.markdown("---")
 
-# 6. Mostrar conversación previa (Para que no se borre al escribir)
+# 6. Mostrar historial
 for message in chat.history:
-    # Traducimos los roles: 'user' somos nosotros, 'model' es la IA
     role = "user" if message.role == "user" else "assistant"
     with st.chat_message(role):
-        st.markdown(message.parts[0].text)
+        # Filtramos para mostrar solo texto en el historial visual por ahora
+        if message.parts[0].text:
+             st.markdown(message.parts[0].text)
 
-# 7. CHAT: Capturar lo que escribes y responder
-if prompt := st.chat_input("Escribe tu pregunta aquí..."):
-    # A. Mostrar tu mensaje inmediatamente en pantalla
+# 7. CHAT LÓGICA
+if prompt := st.chat_input("Escribe tu pregunta sobre la imagen o el tema..."):
+    
+    # A. Mostrar mensaje usuario
     with st.chat_message("user"):
         st.markdown(prompt)
+        if imagen_para_procesar:
+            st.image(imagen_para_procesar, width=200) # Mostrar la foto en el chat también
     
-    # B. Enviar a la IA y esperar respuesta
+    # B. Enviar a la IA
     try:
-        response = chat.send_message(prompt)
-        
-        # C. Mostrar respuesta de la IA
         with st.chat_message("assistant"):
-            st.markdown(response.text)
+            with st.spinner("Analizando... 🧠"):
+                
+                # --- AQUÍ ESTÁ LA MAGIA MULTIMODAL ---
+                if imagen_para_procesar:
+                    # Si hay imagen, enviamos una lista: [texto, imagen]
+                    response = chat.send_message([prompt, imagen_para_procesar])
+                else:
+                    # Si no, enviamos solo texto
+                    response = chat.send_message(prompt)
+                
+                st.markdown(response.text)
         
-        # D. GUARDADO AUTOMÁTICO (Aquí estaba el error antes)
-        # Actualizamos la memoria de Streamlit con la memoria oficial de Gemini
+        # C. Actualizar memoria visual
         st.session_state.history = chat.history
         
     except Exception as e:
-        st.error(f"Ups, ocurrió un error: {e}")
+        st.error(f"Error: {e}")
